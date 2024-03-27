@@ -10,6 +10,8 @@ from diffusers import StableDiffusionPipeline
 from cm_inference import cm_inference
 from cm.script_util import model_and_diffusion_defaults,create_model_and_diffusion,add_dict_to_argparser,args_to_dict,args_to_dict_
 from cm.random_util import get_generator
+from pytorch_pretrained_biggan import (BigGAN, one_hot_from_names, truncated_noise_sample,
+                                       save_as_images, display_in_terminal)
 import argparse
 
 def get_init_noise(args,model_type,bs=1):
@@ -31,6 +33,21 @@ def get_init_noise(args,model_type,bs=1):
         init_noise_0 = torch.randn([bs, args.cur_model.unet.in_channels, height // args.cur_model.vae_scale_factor, width // args.cur_model.vae_scale_factor]).cuda()
         init_noise_text = torch.cat([torch.randn(args.cur_model.prompt_embeds_shape)] * bs).cuda()
         init_noise = (init_noise_0,init_noise_text)
+    elif model_type in ["biggan"]:
+        # Prepare a input
+        truncation = 0.4
+        class_vector = one_hot_from_names([args.classification], batch_size=1)
+        assert class_vector is not None, f"Invalid classification: {args.classification}"
+        noise_vector = truncated_noise_sample(truncation=truncation, batch_size=3)
+
+        # All in tensors
+        noise_vector = torch.from_numpy(noise_vector)
+        class_vector = torch.from_numpy(class_vector)
+
+        # If you have a GPU, put everything on cuda
+        noise_vector = noise_vector.to('cuda')
+        class_vector = class_vector.to('cuda')
+        init_noise=(noise_vector,class_vector,truncation)
     elif "cm" in model_type:
         #init_noise = args.generator_.randn(*(args.batch_size, 3, args.image_size, args.image_size)).cuda()
         init_noise = torch.randn(*(bs, 3, 64, 64)).cuda()
@@ -44,6 +61,10 @@ def from_noise_to_image(args,model,noise,model_type):
         image = model.input2output(noise)
         image = transforms.Resize(32)(image)
         print(image.shape)
+    elif model_type in ["biggan"]:
+        image=model(noise)
+        image=image.clamp(0,1)
+        image=transforms.Resize(32)(image)
     elif model_type in ["styleganv2ada_cifar10"]:
         label = torch.zeros([noise.shape[0], model.c_dim]).cuda()
         image = model(noise, label, noise_mode='none')
@@ -84,6 +105,12 @@ def get_model(model_type,model_path,args):
             cur_model.load_state_dict(torch.load("./dcgan_weights/netG_epoch_24.pth"))
         cur_model = cur_model.cuda()
         cur_model.eval()
+
+    elif model_type =="biggan":
+        model_id= "biggan-deep-256"
+        cur_model = BigGAN.from_pretrained(model_id)
+        model = model.cuda()
+        model.eval()
 
     elif model_type == "styleganv2ada_cifar10":
         tflib.init_tf()

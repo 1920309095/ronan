@@ -11,6 +11,38 @@ import os
 from inference_utils import save_img_tensor
 from inference_models import get_init_noise, get_model,from_noise_to_image
 import pilgram
+def get_classifications(args):
+    if args.picture_source =="ADM"or args.picture_source =="stable_diffusion_v_1_5" or args.picture_source =="Midjourney" \
+            or args.picture_source =="wukong":
+        folder_path =f"/GenImage/GenImage-mini/minitrain/{args.picture_source}/"
+        files=os.listdir(folder_path)
+        selected_file=random.choice(files)
+        line_number=int(selected_file.split("_")[0])
+        with open('synset_words.txt', 'r') as f:
+            # 读取所有行
+            lines = f.readlines()
+
+            # 获取指定行的内容
+            line_content = lines[line_number-1]  # 注意：行号从1开始，而列表的索引从0开始
+
+        # 从行内容中获取类型
+        args.classification = line_content.replace(' ', ', ').split(', ')[1]
+    elif args.picture_source =="glide" or args.picture_source=="VQDM":
+        folder_path =f"/GenImage/GenImage-mini/minitrain/{args.picture_source}/"
+        files=os.listdir(folder_path)
+        selected_file=random.choice(files)
+        line_number=int(selected_file.split("_")[4])
+        with open('synset_words.txt', 'r') as f:
+            # 读取所有行
+            lines = f.readlines()
+
+            # 获取指定行的内容
+            line_content = lines[line_number-1]
+        # 从行内容中获取类型
+        args.classification = line_content.replace(' ', ', ').split(', ')[1]
+    return selected_file
+
+
 def text2img_get_init_image(args):
     
     if args.model_type in ["sd","sd_unet"]:
@@ -83,6 +115,15 @@ def get_image0(args):
         imagenet_img = torch.from_numpy(imagenet_img).cuda().clamp(0, 1).permute(2,0,1).unsqueeze(0).float()
         image0 = imagenet_img
         save_img_tensor(image0,"image0_imagenet.png")
+
+    if args.input_selection == "GenImage":
+        image_dir=f"/GenImage/GenImage-mini/minitrain/{args.picture_source}/"
+        image0=cv2.imread(image_dir)
+        b,g,r = cv2.split(image0)
+        image0 = cv2.merge([r, g, b])
+        image0=cv2.resize(image0,(32,32),interpolation=cv2.INTER_AREA)
+        image0 = image0/255
+        image0 = torch.from_numpy(image0).cuda().clamp(0, 1).permute(2,0,1).unsqueeze(0).float()
 
     if args.input_selection == "use_shiba_image0":
         shiba_img = cv2.imread("shiba_images.jpg")
@@ -175,6 +216,8 @@ def get_image0(args):
     elif args.model_type == "styleganv2ada_cifar10":
         imsize = 32
     elif args.model_type == "vae_cifar10":
+        imsize = 32
+    elif args.model_type == "biggan_cifar10":
         imsize = 32
     elif "cm" in args.model_type:
         imsize = 64

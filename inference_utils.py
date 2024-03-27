@@ -7,6 +7,7 @@ from torchvision import transforms
 from piqa import SSIM
 import lpips
 
+
 class SSIMLoss(SSIM):
     def forward(self, x, y):
         return 1. - super().forward(x, y)
